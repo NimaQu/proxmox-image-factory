@@ -50,7 +50,7 @@ images:
 
   ubuntu-26.04:
     enabled: true
-    slots: [9020, 9021]
+    slots: [9010, 9011]
     template_name: ubuntu-26.04
     default_user: ubuntu
     family: debian

@@ -31,7 +31,7 @@ A/B 两槽交替更新：
 在单个 Proxmox VE 节点上：
 
 ```bash
-unzip proxmox-image-factory.zip
+git clone https://github.com/NimaQu/proxmox-image-factory.git
 cd proxmox-image-factory
 chmod +x install.sh
 ./install.sh
@@ -39,9 +39,11 @@ chmod +x install.sh
 
 安装脚本会安装：
 
-- `python3`
 - `python3-yaml`
 - `libguestfs-tools`
+
+`python3-yaml` 会在系统缺少 Python 3 时通过 APT 依赖自动安装 `python3`；如果
+Proxmox VE 已经安装了它们，APT 不会重复安装。
 
 `qemu-img` 使用 Proxmox VE 自带的 QEMU 栈；安装脚本不会安装 Debian 的
 `qemu-utils`，以免与 `pve-qemu-kvm` 冲突。
@@ -55,7 +57,7 @@ chmod +x install.sh
 /usr/local/sbin/newvm
 ```
 
-## 第一次运行前
+## 安装成功后第一次运行前
 
 编辑：
 
@@ -76,9 +78,6 @@ global:
 ```text
 9000 9001
 9010 9011
-9020 9021
-9030 9031
-9040 9041
 ```
 
 如果已占用，直接改 `slots`。

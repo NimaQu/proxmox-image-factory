@@ -34,7 +34,6 @@ if ! command -v qemu-img >/dev/null 2>&1; then
 fi
 
 DEPS=(
-  python3
   python3-yaml
   libguestfs-tools
   ca-certificates
@@ -80,6 +79,11 @@ for cmd in qemu-img virt-customize virt-sysprep qm pvesh; do
     exit 1
   fi
 done
+
+if ! python3 -c 'import yaml' >/dev/null 2>&1; then
+  echo "ERROR: Python 3 无法导入 yaml 模块；请检查 python3-yaml 包状态。" >&2
+  exit 1
+fi
 
 echo "[4/6] 安装 Image Factory"
 install -d -m 0755 \

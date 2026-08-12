@@ -1,0 +1,11 @@
+[Unit]
+Description=Proxmox Cloud Image Factory
+Wants=network-online.target
+After=network-online.target pve-cluster.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/proxmox-image-factory/bin/build-images.py --all
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly Proxmox Cloud Image update check
+
+[Timer]
+OnCalendar=Sun *-*-* 03:00:00
+Persistent=true
+RandomizedDelaySec=30m
+Unit=proxmox-image-factory.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,64 @@
+# Proxmox Image Factory
+# x86_64 / amd64 示例配置。第一次运行前请至少确认 storage/bridge。
+#
+# 两槽滚动更新：
+#   slots[0] / slots[1] 交替作为 current / previous。
+#   新镜像必须通过 QEMU Guest Agent smoke test 才会切换 current。
+#
+# checksum_url 指向发行版官方 checksum 文件；builder 会从里面提取 image_url
+# 对应文件名的 checksum。不会仅依赖 Last-Modified。
+
+global:
+  storage: local-lvm
+  bridge: vmbr0
+
+  # 模板最小配置；clone 后由 newvm 覆盖。
+  template_memory_mb: 1024
+  template_cores: 1
+
+  # newvm 默认值
+  default_memory_mb: 2048
+  default_cores: 2
+  default_disk_gb: 32
+
+  # build/test
+  smoke_timeout_sec: 240
+  shutdown_timeout_sec: 60
+
+  # 官方 cloud image 通常已经很新；false 可减少构建失败概率。
+  # 如果希望构建时执行 apt/dnf 全量更新，改成 true。
+  update_packages: false
+
+  # 如果 clone 后启用 discard，可让 guest-agent 在克隆后 fstrim。
+  agent: "enabled=1,fstrim_cloned_disks=1"
+
+images:
+  debian-13:
+    enabled: true
+    slots: [9000, 9001]
+    template_name: debian-13
+    default_user: debian
+    family: debian
+    image_url: https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2
+    checksum_url: https://cloud.debian.org/images/cloud/trixie/latest/SHA512SUMS
+    checksum_algo: sha512
+    packages:
+      - qemu-guest-agent
+      - curl
+      - ca-certificates
+      - vim
+
+  ubuntu-26.04:
+    enabled: true
+    slots: [9020, 9021]
+    template_name: ubuntu-26.04
+    default_user: ubuntu
+    family: debian
+    image_url: https://cloud-images.ubuntu.com/releases/resolute/release/ubuntu-26.04-server-cloudimg-amd64.img
+    checksum_url: https://cloud-images.ubuntu.com/releases/resolute/release/SHA256SUMS
+    checksum_algo: sha256
+    packages:
+      - qemu-guest-agent
+      - curl
+      - ca-certificates
+      - vim

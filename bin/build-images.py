@@ -268,22 +268,29 @@ def customize_image(src: Path, dest: Path, image_cfg: dict[str, Any],
 
 def create_template_from_disk(vmid: int, name: str, disk: Path,
                               storage: str, bridge: str,
-                              global_cfg: dict[str, Any]) -> None:
+                              global_cfg: dict[str, Any],
+                              image_cfg: dict[str, Any]) -> None:
     if vm_exists(vmid):
         destroy_vm(vmid)
 
-    run([
+    create_cmd = [
         "qm", "create", str(vmid),
         "--name", name,
         "--ostype", "l26",
-        "--memory", str(global_cfg.get("template_memory_mb", 1024)),
-        "--cores", str(global_cfg.get("template_cores", 1)),
+        "--memory", str(image_cfg.get(
+            "template_memory_mb", global_cfg.get("template_memory_mb", 1024)
+        )),
+        "--cores", str(image_cfg.get(
+            "template_cores", global_cfg.get("template_cores", 1)
+        )),
         "--scsihw", "virtio-scsi-pci",
         "--net0", f"virtio,bridge={bridge}",
         "--serial0", "socket",
         "--vga", "serial0",
         "--agent", str(global_cfg.get("agent", "1")),
-    ])
+    ]
+    create_cmd += ["--cpu", str(global_cfg.get("cpu", "host"))]
+    run(create_cmd)
 
     try:
         run(["qm", "importdisk", str(vmid), str(disk), storage])
@@ -430,6 +437,7 @@ def build_one(name: str, image_cfg: dict[str, Any], global_cfg: dict[str, Any],
             storage,
             bridge,
             global_cfg,
+            image_cfg,
         )
 
         smoke_test(

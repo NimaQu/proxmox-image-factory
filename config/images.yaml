@@ -16,6 +16,10 @@ global:
   template_memory_mb: 1024
   template_cores: 1
 
+  # Expose the host CPU model to every template and clone.
+  # All migration target nodes must provide compatible CPU features.
+  cpu: host
+
   # newvm defaults
   default_memory_mb: 2048
   default_cores: 2
@@ -69,6 +73,8 @@ images:
     template_name: centos-stream-10
     default_user: cloud-user
     family: rhel
+    # RHEL 10 documents a 1.5 GiB minimum; leave headroom for the smoke test.
+    template_memory_mb: 2048
     image_url: https://cloud.centos.org/centos/10-stream/x86_64/images/CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2
     checksum_url: https://cloud.centos.org/centos/10-stream/x86_64/images/CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2.SHA256SUM
     checksum_algo: sha256
@@ -87,8 +93,7 @@ images:
     image_url: https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2
     checksum_url: https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2.SHA256
     checksum_algo: sha256
-    packages:
-      - qemu-guest-agent
-      - curl
-      - ca-certificates
-      - vim
+    # The official cloud image already contains qemu-guest-agent, curl, and CA
+    # certificates. Avoid offline pacman operations because its image keyring is
+    # intentionally not initialized for this libguestfs workflow.
+    packages: []

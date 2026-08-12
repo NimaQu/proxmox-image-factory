@@ -61,6 +61,32 @@ Files are installed under:
 /usr/local/sbin/newvm
 ```
 
+## Upgrade
+
+Pull the latest code and rerun the installer:
+
+```bash
+cd proxmox-image-factory
+git pull --ff-only
+./install.sh
+```
+
+The installer preserves the active `images.yaml` and writes the repository version
+to `images.yaml.example`. Review and merge new image options manually:
+
+```bash
+diff -u \
+  /opt/proxmox-image-factory/config/images.yaml \
+  /opt/proxmox-image-factory/config/images.yaml.example
+```
+
+After upgrading from a version that did not use the host CPU model globally, rebuild
+all enabled templates so future clones inherit it:
+
+```bash
+pve-image-build --all --force
+```
+
 ## Before the first run
 
 Edit the installed configuration:
@@ -75,7 +101,12 @@ At minimum, verify:
 global:
   storage: local-lvm
   bridge: vmbr0
+  cpu: host
 ```
+
+All templates and cloned VMs use the host CPU model. This provides the physical
+CPU's available instruction set and performance features, but migration targets
+must have compatible CPUs.
 
 Also ensure these VMIDs are unused:
 
@@ -230,6 +261,23 @@ images:
 
 Set `enabled` to `true` to enable an image, and confirm that both of its VMID slots
 are unused first.
+
+CentOS Stream 10 targets the `x86_64-v3` ISA and needs more memory than the global
+smoke-test default. The global `cpu: host` setting exposes the host instruction set,
+and the CentOS example sets `template_memory_mb: 2048`. The physical CPU must still
+support x86_64-v3.
+
+The official Arch Linux cloud image already includes the components needed by this
+pipeline. Its example uses `packages: []` to avoid running pacman through
+libguestfs before the image keyring has been initialized.
+
+After changing either of these options on an existing installation, rebuild the
+template explicitly:
+
+```bash
+pve-image-build --only centos-stream-10 --force
+pve-image-build --only archlinux --force
+```
 
 ## Add a distribution
 

@@ -101,6 +101,8 @@ if [[ ! -f "$DST/config/images.yaml" ]]; then
 else
   echo "Preserving existing configuration: $DST/config/images.yaml"
   install -m 0644 "$SRC_DIR/config/images.yaml" "$DST/config/images.yaml.example"
+  echo "Updated configuration example: $DST/config/images.yaml.example"
+  echo "Review changes with: diff -u $DST/config/images.yaml $DST/config/images.yaml.example"
 fi
 
 ln -sfn "$DST/bin/build-images.py" /usr/local/sbin/pve-image-build

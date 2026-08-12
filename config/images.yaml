@@ -62,3 +62,33 @@ images:
       - curl
       - ca-certificates
       - vim
+
+  centos-stream-10:
+    enabled: false
+    slots: [9020, 9021]
+    template_name: centos-stream-10
+    default_user: cloud-user
+    family: rhel
+    image_url: https://cloud.centos.org/centos/10-stream/x86_64/images/CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2
+    checksum_url: https://cloud.centos.org/centos/10-stream/x86_64/images/CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2.SHA256SUM
+    checksum_algo: sha256
+    packages:
+      - qemu-guest-agent
+      - curl
+      - ca-certificates
+      - vim
+
+  archlinux:
+    enabled: false
+    slots: [9030, 9031]
+    template_name: archlinux
+    default_user: arch
+    family: arch
+    image_url: https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2
+    checksum_url: https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2.SHA256
+    checksum_algo: sha256
+    packages:
+      - qemu-guest-agent
+      - curl
+      - ca-certificates
+      - vim

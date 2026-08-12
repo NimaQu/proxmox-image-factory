@@ -7,7 +7,9 @@
 每个发行版分配两个 VMID slot，例如：
 
 - Debian 13: `9000 / 9001`
-- Ubuntu 24.04: `9010 / 9011`
+- Ubuntu 26.04: `9010 / 9011`
+- CentOS Stream 10（默认关闭）: `9020 / 9021`
+- Arch Linux（默认关闭）: `9030 / 9031`
 
 A/B 两槽交替更新：
 
@@ -78,6 +80,8 @@ global:
 ```text
 9000 9001
 9010 9011
+9020 9021
+9030 9031
 ```
 
 如果已占用，直接改 `slots`。
@@ -115,12 +119,11 @@ newvm --list
 示例：
 
 ```text
-IMAGE          CURRENT  PREVIOUS  USER       CHECKSUM
-debian-13      9000     -         debian     ...
-ubuntu-24.04   9010     -         ubuntu     ...
-ubuntu-26.04   9020     -         ubuntu     ...
-rocky-9        9030     -         rocky      ...
-almalinux-9    9040     -         almalinux  ...
+IMAGE             CURRENT  PREVIOUS  USER        CHECKSUM
+debian-13         9000     -         debian      ...
+ubuntu-26.04      9010     -         ubuntu      ...
+centos-stream-10  -        -         cloud-user  -
+archlinux         -        -         arch        -
 ```
 
 下一次 Debian 镜像更新后可能变成：
@@ -211,9 +214,14 @@ systemctl edit --full proxmox-image-factory.timer
 
 ```yaml
 images:
-  rocky-9:
+  centos-stream-10:
+    enabled: false
+  archlinux:
     enabled: false
 ```
+
+示例配置中的 CentOS Stream 10 和 Arch Linux 默认关闭。启用前将对应条目的
+`enabled` 改成 `true`，并确认其两个 VMID slot 未被占用。
 
 ## 增加新发行版
 
@@ -256,13 +264,3 @@ systemctl disable --now proxmox-image-factory.timer
 ```
 
 在你指定的 builder 节点保留启用即可。
-
-## 安全/一致性
-
-- 上游文件必须匹配 checksum 才会继续。
-- 当前版本不会自动做 checksum 文件的 GPG signature 验证；若你的供应链要求更高，
-  建议为 Debian/Ubuntu/Alma/Rocky 分别增加发行版签名密钥校验。
-- `virt-customize` 和 `virt-sysprep` 只操作下载后的工作副本，不修改缓存原图。
-- candidate 失败不会切换 current。
-- previous slot 保留一版，方便快速 rollback。
-- `newvm` 使用 full clone，避免依赖 base image；如果你想节省空间，可以自行改成 linked clone。

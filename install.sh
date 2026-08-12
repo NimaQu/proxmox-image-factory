@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
-  echo "请以 root 运行: ./install.sh" >&2
+  echo "Run this installer as root: ./install.sh" >&2
   exit 1
 fi
 
@@ -10,24 +10,25 @@ SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DST="/opt/proxmox-image-factory"
 STATE="/var/lib/proxmox-image-factory"
 
-# 必须在 Proxmox VE 节点上运行
+# This installer must run on a Proxmox VE node.
 for cmd in qm pveversion pvesh; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
-    echo "ERROR: 找不到 $cmd；请在 Proxmox VE 节点上运行。" >&2
+    echo "ERROR: $cmd was not found; run this installer on a Proxmox VE node." >&2
     exit 1
   fi
 done
 
-echo "检测到 Proxmox VE:"
+echo "Detected Proxmox VE:"
 pveversion
 echo
 
-# PVE 自带自己的 QEMU 栈。不要安装 Debian 的 qemu-utils / qemu-system-*，
-# 否则可能与 pve-qemu-kvm 冲突并导致 apt 试图移除 Proxmox VE 核心包。
+# PVE provides its own QEMU stack. Do not install Debian's qemu-utils or
+# qemu-system-* packages; they may conflict with pve-qemu-kvm and cause APT to
+# remove core Proxmox VE packages.
 if ! command -v qemu-img >/dev/null 2>&1; then
-  echo "ERROR: 找不到 qemu-img。" >&2
-  echo "不要执行 'apt install qemu-utils'。" >&2
-  echo "请先检查 PVE 的 pve-qemu-kvm 包状态：" >&2
+  echo "ERROR: qemu-img was not found." >&2
+  echo "Do not run 'apt install qemu-utils'." >&2
+  echo "Check the PVE pve-qemu-kvm package first:" >&2
   echo "  dpkg -l pve-qemu-kvm" >&2
   echo "  apt-cache policy pve-qemu-kvm" >&2
   exit 1
@@ -39,12 +40,12 @@ DEPS=(
   ca-certificates
 )
 
-echo "[1/6] APT 安全预检"
+echo "[1/6] APT safety check"
 
-# 先模拟安装，确保不会删除 PVE 核心包
+# Simulate installation first and ensure no core PVE packages would be removed.
 SIM_OUT="$(apt-get -s install "${DEPS[@]}" 2>&1)" || {
   printf '%s\n' "$SIM_OUT" >&2
-  echo "FATAL: apt-get 模拟安装失败，未执行任何真实安装。" >&2
+  echo "FATAL: apt-get simulation failed; no packages were installed." >&2
   exit 1
 }
 
@@ -63,29 +64,29 @@ PROTECTED_PACKAGES=(
 for pkg in "${PROTECTED_PACKAGES[@]}"; do
   if printf '%s\n' "$SIM_OUT" | grep -Eq "^Remv[[:space:]]+${pkg}([[:space:]:]|$)"; then
     echo >&2
-    echo "FATAL: APT 模拟显示将移除 Proxmox VE 核心包：$pkg" >&2
-    echo "已拒绝继续，未执行真实安装。" >&2
+    echo "FATAL: APT simulation would remove core Proxmox VE package: $pkg" >&2
+    echo "Refusing to continue; no packages were installed." >&2
     exit 2
   fi
 done
 
-echo "[2/6] 安装依赖"
+echo "[2/6] Installing dependencies"
 DEBIAN_FRONTEND=noninteractive apt-get install -y "${DEPS[@]}"
 
-echo "[3/6] 校验依赖命令"
+echo "[3/6] Verifying dependency commands"
 for cmd in qemu-img virt-customize virt-sysprep qm pvesh; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
-    echo "ERROR: 安装后仍找不到命令: $cmd" >&2
+    echo "ERROR: Command still missing after installation: $cmd" >&2
     exit 1
   fi
 done
 
 if ! python3 -c 'import yaml' >/dev/null 2>&1; then
-  echo "ERROR: Python 3 无法导入 yaml 模块；请检查 python3-yaml 包状态。" >&2
+  echo "ERROR: Python 3 cannot import yaml; check the python3-yaml package." >&2
   exit 1
 fi
 
-echo "[4/6] 安装 Image Factory"
+echo "[4/6] Installing Image Factory"
 install -d -m 0755 \
   "$DST/bin" \
   "$DST/config" \
@@ -98,14 +99,14 @@ install -m 0755 "$SRC_DIR/bin/newvm.py" "$DST/bin/newvm.py"
 if [[ ! -f "$DST/config/images.yaml" ]]; then
   install -m 0644 "$SRC_DIR/config/images.yaml" "$DST/config/images.yaml"
 else
-  echo "保留现有配置: $DST/config/images.yaml"
+  echo "Preserving existing configuration: $DST/config/images.yaml"
   install -m 0644 "$SRC_DIR/config/images.yaml" "$DST/config/images.yaml.example"
 fi
 
 ln -sfn "$DST/bin/build-images.py" /usr/local/sbin/pve-image-build
 ln -sfn "$DST/bin/newvm.py" /usr/local/sbin/newvm
 
-echo "[5/6] 安装 systemd unit"
+echo "[5/6] Installing systemd units"
 install -m 0644 \
   "$SRC_DIR/systemd/proxmox-image-factory.service" \
   /etc/systemd/system/proxmox-image-factory.service
@@ -116,33 +117,33 @@ install -m 0644 \
 
 systemctl daemon-reload
 
-echo "[6/6] 启用自动更新 timer"
+echo "[6/6] Enabling the automatic update timer"
 systemctl enable --now proxmox-image-factory.timer
 
 cat <<'EOF'
 
-安装完成。
+Installation complete.
 
-下一步：
+Next steps:
 
-1. 修改配置：
+1. Edit the configuration:
    nano /opt/proxmox-image-factory/config/images.yaml
 
-2. 至少确认：
+2. Verify at minimum:
    global.storage
    global.bridge
-   各发行版 slots VMID 未被占用
+   Each image's slot VMIDs are unused
 
-3. 先检查上游：
+3. Check upstream images first:
    pve-image-build --check
 
-4. 建议先只构建 Debian：
+4. Start by building Debian only:
    pve-image-build --only debian-13
 
-5. 确认正常后全部构建：
+5. Build all images after confirming it works:
    pve-image-build --all
 
-6. 查看可用模板：
+6. List available templates:
    newvm --list
 
 EOF

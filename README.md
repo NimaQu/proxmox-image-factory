@@ -1,36 +1,38 @@
 # Proxmox Image Factory
 
-用于 Proxmox VE 的多发行版 Cloud Image 自动模板流水线。
+An automated multi-distribution cloud image template pipeline for Proxmox VE.
 
-## 设计
+## Design
 
-每个发行版分配两个 VMID slot，例如：
+Each distribution is assigned two VMID slots, for example:
 
 - Debian 13: `9000 / 9001`
 - Ubuntu 26.04: `9010 / 9011`
-- CentOS Stream 10（默认关闭）: `9020 / 9021`
-- Arch Linux（默认关闭）: `9030 / 9031`
+- CentOS Stream 10 (disabled by default): `9020 / 9021`
+- Arch Linux (disabled by default): `9030 / 9031`
 
-A/B 两槽交替更新：
+Updates alternate between the A/B slots:
 
-1. 从官方 checksum 判断 upstream 是否变化。
-2. 下载并校验官方 cloud image。
-3. `virt-customize` 离线安装 `qemu-guest-agent` 和基础包。
-4. `virt-sysprep` 清除 machine-id / SSH host keys / 固化 MAC。
-5. 把新镜像导入 inactive slot 并转成 Proxmox Template。
-6. 从 candidate template 做一个临时 **full clone**。
-7. 只启动临时 clone，等待 QEMU Guest Agent `ping` 和 `get-osinfo`。
-8. 测试通过才把 candidate 标成 `*-current`；旧 current 改名为 `*-previous`。
-9. `newvm` 永远读取 state.json 中的 current VMID。
+1. Check the official checksum to detect upstream changes.
+2. Download and verify the official cloud image.
+3. Install `qemu-guest-agent` and base packages offline with `virt-customize`.
+4. Clear machine-id, SSH host keys, and persistent MAC addresses with `virt-sysprep`.
+5. Import the new image into the inactive slot and convert it to a Proxmox template.
+6. Create a temporary **full clone** from the candidate template.
+7. Boot only the temporary clone and wait for QEMU Guest Agent `ping` and `get-osinfo`.
+8. Mark the candidate as `*-current` only after the test passes, then rename the old
+   current template to `*-previous`.
+9. `newvm` always reads the current VMID from `state.json`.
 
-因此构建失败或上游坏镜像不会直接破坏当前可用模板。
+A failed build or a broken upstream image therefore does not immediately replace the
+currently usable template.
 
-> 模板本身从不启动。Smoke test 启动的是临时 full clone，避免重新生成的
-> machine-id / SSH host key 被固化回模板。
+> Templates are never booted. Smoke tests boot a temporary full clone so regenerated
+> machine IDs and SSH host keys are not persisted in the template.
 
-## 安装
+## Installation
 
-在单个 Proxmox VE 节点上：
+Run the following on a Proxmox VE node:
 
 ```bash
 git clone https://github.com/NimaQu/proxmox-image-factory.git
@@ -39,18 +41,18 @@ chmod +x install.sh
 ./install.sh
 ```
 
-安装脚本会安装：
+The installer installs:
 
 - `python3-yaml`
 - `libguestfs-tools`
 
-`python3-yaml` 会在系统缺少 Python 3 时通过 APT 依赖自动安装 `python3`；如果
-Proxmox VE 已经安装了它们，APT 不会重复安装。
+`python3-yaml` pulls in `python3` through its APT dependency if Python 3 is missing.
+APT does not reinstall packages that are already present on Proxmox VE.
 
-`qemu-img` 使用 Proxmox VE 自带的 QEMU 栈；安装脚本不会安装 Debian 的
-`qemu-utils`，以免与 `pve-qemu-kvm` 冲突。
+`qemu-img` comes from the QEMU stack provided by Proxmox VE. The installer does not
+install Debian's `qemu-utils`, which may conflict with `pve-qemu-kvm`.
 
-然后安装到：
+Files are installed under:
 
 ```text
 /opt/proxmox-image-factory
@@ -59,15 +61,15 @@ Proxmox VE 已经安装了它们，APT 不会重复安装。
 /usr/local/sbin/newvm
 ```
 
-## 安装成功后第一次运行前
+## Before the first run
 
-编辑：
+Edit the installed configuration:
 
 ```bash
 nano /opt/proxmox-image-factory/config/images.yaml
 ```
 
-至少检查：
+At minimum, verify:
 
 ```yaml
 global:
@@ -75,7 +77,7 @@ global:
   bridge: vmbr0
 ```
 
-以及这些 VMID 没有被占用：
+Also ensure these VMIDs are unused:
 
 ```text
 9000 9001
@@ -84,39 +86,41 @@ global:
 9030 9031
 ```
 
-如果已占用，直接改 `slots`。
+Change the corresponding `slots` values if any VMID is already in use.
 
-## 先检查，不构建
+## Check without building
 
 ```bash
 pve-image-build --check
 ```
 
-## 第一次构建全部模板
+## Build templates
+
+Build all enabled templates for the first time:
 
 ```bash
 pve-image-build --all
 ```
 
-只构建某几个：
+Build selected images:
 
 ```bash
 pve-image-build --only debian-13 ubuntu-26.04
 ```
 
-强制重建：
+Force a rebuild:
 
 ```bash
 pve-image-build --only debian-13 --force
 ```
 
-成功后：
+List available templates after a successful build:
 
 ```bash
 newvm --list
 ```
 
-示例：
+Example output:
 
 ```text
 IMAGE             CURRENT  PREVIOUS  USER        CHECKSUM
@@ -126,23 +130,23 @@ centos-stream-10  -        -         cloud-user  -
 archlinux         -        -         arch        -
 ```
 
-下一次 Debian 镜像更新后可能变成：
+After the next Debian image update, its row might become:
 
 ```text
-debian-13      9001     9000      debian     ...
+debian-13         9001     9000      debian      ...
 ```
 
-`newvm` 会自动使用 9001。
+`newvm` will then use VMID 9001 automatically.
 
-## 创建 VM
+## Create a VM
 
-最简单：
+Basic usage:
 
 ```bash
 newvm debian-13 docker01
 ```
 
-指定资源：
+Specify resources:
 
 ```bash
 newvm ubuntu-26.04 web01 \
@@ -151,20 +155,20 @@ newvm ubuntu-26.04 web01 \
   --disk 64
 ```
 
-注入 SSH 公钥：
+Inject an SSH public key:
 
 ```bash
 newvm debian-13 docker01 \
   --ssh-key /root/.ssh/id_ed25519.pub
 ```
 
-DHCP：
+Use DHCP:
 
 ```bash
 newvm debian-13 vm01 --ip dhcp
 ```
 
-静态 IP：
+Use a static IP:
 
 ```bash
 newvm debian-13 vm01 \
@@ -173,44 +177,48 @@ newvm debian-13 vm01 \
   --nameserver 192.168.10.1
 ```
 
-指定 VMID：
+Specify a VMID:
 
 ```bash
-newvm rocky-9 app01 --vmid 120
+newvm debian-13 app01 --vmid 120
 ```
 
-只创建不启动：
+Create without starting:
 
 ```bash
-newvm almalinux-9 test01 --no-start
+newvm archlinux test01 --no-start
 ```
 
-`newvm` 会在 clone 前校验 SSH key、静态 IPv4/gateway，以及 CPU、内存、磁盘
-参数。输入错误时不会创建 VM。磁盘参数表示期望的最小系统盘大小；已有系统盘更大
-时会保留原大小，其他 `qm resize` 错误会使命令失败并保留 VM 以便排查。
+`newvm` validates the SSH key, static IPv4/gateway, CPU, memory, and disk options
+before cloning. Invalid input does not create a VM. The disk option specifies the
+minimum desired system disk size. A larger existing disk is preserved; other
+`qm resize` failures abort the command and leave the VM available for troubleshooting.
 
-## 定时更新
+## Scheduled updates
 
-默认每周日 03:00，另加 0~30 分钟随机延迟：
+The default schedule is Sunday at 03:00 with an additional randomized delay of up
+to 30 minutes:
 
 ```bash
 systemctl list-timers proxmox-image-factory.timer
 ```
 
-立即手工触发：
+Trigger a run manually:
 
 ```bash
 systemctl start proxmox-image-factory.service
 journalctl -u proxmox-image-factory.service -f
 ```
 
-修改时间：
+Change the schedule:
 
 ```bash
 systemctl edit --full proxmox-image-factory.timer
 ```
 
-## 关闭某个发行版
+## Enable or disable an image
+
+CentOS Stream 10 and Arch Linux are disabled in the example configuration:
 
 ```yaml
 images:
@@ -220,12 +228,12 @@ images:
     enabled: false
 ```
 
-示例配置中的 CentOS Stream 10 和 Arch Linux 默认关闭。启用前将对应条目的
-`enabled` 改成 `true`，并确认其两个 VMID slot 未被占用。
+Set `enabled` to `true` to enable an image, and confirm that both of its VMID slots
+are unused first.
 
-## 增加新发行版
+## Add a distribution
 
-复制一个 image block，并提供：
+Copy an image block and provide:
 
 ```yaml
 my-linux:
@@ -240,7 +248,7 @@ my-linux:
     - qemu-guest-agent
 ```
 
-支持常见 checksum 格式：
+Common checksum formats are supported:
 
 ```text
 HASH  filename
@@ -249,18 +257,20 @@ SHA256 (filename) = HASH
 SHA512 (filename) = HASH
 ```
 
-## 关于 cluster
+## Cluster considerations
 
-这套初版假定 builder 在一个固定 PVE 节点运行，并且 template 所在 storage 对
-该节点可用。
+This initial implementation assumes that the builder runs on one fixed PVE node and
+that the template storage is available to that node.
 
-如果 `storage` 是共享存储（Ceph/RBD/NFS 等），模板磁盘可以供集群其它节点使用，
-但模板 VM 配置本身仍由 PVE cluster filesystem 管理。
+Shared storage such as Ceph, RBD, or NFS makes template disks available to other
+cluster nodes, while template VM configuration remains managed by the PVE cluster
+filesystem.
 
-systemd timer 建议只在一个节点启用，避免多个节点同时构建：
+Enable the systemd timer on only one node to avoid concurrent builds. Disable it on
+all other nodes:
 
 ```bash
 systemctl disable --now proxmox-image-factory.timer
 ```
 
-在你指定的 builder 节点保留启用即可。
+Keep it enabled on the designated builder node.

@@ -2,11 +2,11 @@
 """
 Proxmox Image Factory
 
-- 从发行版官方 cloud image + checksum 构建 Proxmox 模板
-- 使用 virt-customize 离线安装 qemu-guest-agent 等基础包
-- 使用 virt-sysprep 清理 machine-id / SSH host keys / 固化 MAC
-- A/B 两槽滚动：current 保留到新模板 smoke test 通过
-- smoke test 在模板的临时 full clone 上进行，因此模板本身从不启动
+- Build Proxmox templates from official cloud images and checksums
+- Install qemu-guest-agent and base packages offline with virt-customize
+- Clear machine-id, SSH host keys, and persistent MAC addresses with virt-sysprep
+- Use A/B slots and retain current until the candidate passes its smoke test
+- Run smoke tests on temporary full clones; templates are never booted
 """
 
 from __future__ import annotations
@@ -72,14 +72,14 @@ def shlex_quote(s: str) -> str:
 
 def require_root() -> None:
     if os.geteuid() != 0:
-        raise FactoryError("必须以 root 运行。")
+        raise FactoryError("Must be run as root.")
 
 
 def require_commands() -> None:
     needed = ["qm", "pvesh", "qemu-img", "virt-customize", "virt-sysprep"]
     missing = [x for x in needed if shutil.which(x) is None]
     if missing:
-        raise FactoryError("缺少命令: " + ", ".join(missing))
+        raise FactoryError("Missing commands: " + ", ".join(missing))
 
 
 def ensure_dirs() -> None:
@@ -91,7 +91,7 @@ def load_yaml(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     if not isinstance(data, dict) or "images" not in data:
-        raise FactoryError(f"无效配置文件: {path}")
+        raise FactoryError(f"Invalid configuration file: {path}")
     return data
 
 
@@ -101,7 +101,7 @@ def load_state() -> dict[str, Any]:
     try:
         return json.loads(STATE_FILE.read_text(encoding="utf-8"))
     except Exception as e:
-        raise FactoryError(f"读取 state.json 失败: {e}") from e
+        raise FactoryError(f"Failed to read state.json: {e}") from e
 
 
 def save_state(state: dict[str, Any]) -> None:
@@ -121,7 +121,7 @@ def download(url: str, dest: Path, expected_hash: str, algo: str) -> None:
     partial = dest.with_suffix(dest.suffix + ".partial")
     h = hashlib.new(algo)
     req = urllib.request.Request(url, headers={"User-Agent": "proxmox-image-factory/1.0"})
-    log(f"下载: {url}")
+    log(f"Downloading: {url}")
     with urllib.request.urlopen(req, timeout=60) as r, partial.open("wb") as f:
         while True:
             chunk = r.read(4 * 1024 * 1024)
@@ -133,10 +133,10 @@ def download(url: str, dest: Path, expected_hash: str, algo: str) -> None:
     got = h.hexdigest().lower()
     if got != expected_hash.lower():
         partial.unlink(missing_ok=True)
-        raise FactoryError(f"checksum 不匹配: expected={expected_hash}, got={got}")
+        raise FactoryError(f"Checksum mismatch: expected={expected_hash}, got={got}")
 
     os.replace(partial, dest)
-    log(f"校验通过: {algo}:{got}")
+    log(f"Checksum verified: {algo}:{got}")
 
 
 def hash_file(path: Path, algo: str) -> str:
@@ -149,7 +149,7 @@ def hash_file(path: Path, algo: str) -> str:
 
 def parse_checksum(text: str, filename: str, algo: str) -> str:
     """
-    支持常见格式：
+    Supported formats:
       HASH  filename
       HASH *filename
       SHA256 (filename) = HASH
@@ -176,14 +176,14 @@ def parse_checksum(text: str, filename: str, algo: str) -> str:
             if normalized == algo.lower() and Path(fn).name == base and len(h) == want_len:
                 return h.lower()
 
-        # Rocky 的 CHECKSUM 有时可能包含 "SHA256 (file) = hash" 前后的说明，
-        # 这里再做一个宽松匹配，但仍要求文件名和 hash 长度精确。
+        # Rocky CHECKSUM files may include explanatory text around
+        # "SHA256 (file) = hash". Match loosely but require an exact filename and hash length.
         if base in line:
             candidates = re.findall(rf"\b[0-9A-Fa-f]{{{want_len}}}\b", line)
             if candidates:
                 return candidates[0].lower()
 
-    raise FactoryError(f"在 checksum 文件中找不到 {base} 的 {algo}")
+    raise FactoryError(f"No {algo} checksum for {base} was found in the checksum file")
 
 
 def vm_exists(vmid: int) -> bool:
@@ -212,7 +212,7 @@ def next_vmid() -> int:
     except Exception:
         m = re.search(r"\d+", out)
         if not m:
-            raise FactoryError(f"无法解析 nextid: {out!r}")
+            raise FactoryError(f"Unable to parse nextid: {out!r}")
         return int(m.group(0))
 
 
@@ -225,7 +225,7 @@ def imported_unused_disk(vmid: int) -> str:
             volid = value.strip().split(",", 1)[0]
             candidates.append(volid)
     if len(candidates) != 1:
-        raise FactoryError(f"VM {vmid} 导入后预期 1 个 unused disk，实际 {len(candidates)} 个")
+        raise FactoryError(f"Expected one unused disk after importing VM {vmid}; found {len(candidates)}")
     return candidates[0]
 
 
@@ -238,7 +238,7 @@ def guestfs_env() -> dict[str, str]:
 
 def customize_image(src: Path, dest: Path, image_cfg: dict[str, Any],
                     global_cfg: dict[str, Any]) -> None:
-    # 保留缓存的官方原图；每次从原图转换出独立 qcow2 工作副本。
+    # Preserve the cached official image and create a separate qcow2 working copy.
     dest.unlink(missing_ok=True)
     run(["qemu-img", "convert", "-p", "-O", "qcow2", str(src), str(dest)])
 
@@ -249,8 +249,8 @@ def customize_image(src: Path, dest: Path, image_cfg: dict[str, Any],
     if packages:
         cmd += ["--install", ",".join(packages)]
 
-    # qemu-guest-agent 包安装后，明确 enable；某些镜像中 unit 是 static，
-    # 因此失败不作为构建失败。
+    # Explicitly enable qemu-guest-agent after installation. The unit is static in
+    # some images, so failure here does not fail the build.
     cmd += [
         "--run-command",
         "systemctl enable qemu-guest-agent.service 2>/dev/null || true",
@@ -259,7 +259,7 @@ def customize_image(src: Path, dest: Path, image_cfg: dict[str, Any],
     ]
     run(cmd, env=guestfs_env())
 
-    # 只做和克隆唯一性直接相关的清理，避免过度 sysprep。
+    # Limit sysprep to operations required for clone uniqueness.
     run([
         "virt-sysprep", "-a", str(dest),
         "--operations", ",".join(SYSPREP_OPS),
@@ -325,13 +325,13 @@ def smoke_test(template_vmid: int, storage: str, timeout: int,
 
         if not wait_agent(test_vmid, timeout):
             raise FactoryError(
-                f"smoke test 失败：VM {test_vmid} 在 {timeout}s 内 QEMU Guest Agent 未响应"
+                f"Smoke test failed: QEMU Guest Agent on VM {test_vmid} did not respond within {timeout}s"
             )
 
-        # 能拿到 osinfo，进一步证明 guest-agent 通道工作。
+        # Fetching osinfo further verifies that the guest-agent channel works.
         run(["qm", "agent", str(test_vmid), "get-osinfo"], capture=True)
 
-        # 正常关机优先；失败再 destroy 时强制 stop。
+        # Prefer a clean shutdown; force-stop before destruction if it fails.
         cp = subprocess.run(
             ["qm", "shutdown", str(test_vmid), "--timeout", str(shutdown_timeout)],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
@@ -352,7 +352,7 @@ def choose_inactive_slot(name: str, cfg: dict[str, Any],
                          state: dict[str, Any]) -> tuple[int, int | None]:
     slots = cfg.get("slots")
     if not isinstance(slots, list) or len(slots) != 2:
-        raise FactoryError(f"{name}: slots 必须恰好包含两个 VMID")
+        raise FactoryError(f"{name}: slots must contain exactly two VMIDs")
     a, b = int(slots[0]), int(slots[1])
 
     current = state.get("images", {}).get(name, {}).get("current_vmid")
@@ -360,7 +360,7 @@ def choose_inactive_slot(name: str, cfg: dict[str, Any],
         inactive = b if int(current) == a else a
         return inactive, int(current)
 
-    # state 丢失时，尽量根据现有 VM 判断；若两个都存在，优先保留 slot A。
+    # If state is missing, infer it from existing VMs. Preserve slot A if both exist.
     exists_a, exists_b = vm_exists(a), vm_exists(b)
     if exists_a and not exists_b:
         return b, a
@@ -393,7 +393,7 @@ def build_one(name: str, image_cfg: dict[str, Any], global_cfg: dict[str, Any],
         return changed
 
     if not force and not changed:
-        log(f"{name}: upstream checksum 未变化，跳过")
+        log(f"{name}: upstream checksum is unchanged; skipping")
         return False
 
     cache_name = f"{name}-{upstream_hash[:16]}-{filename}"
@@ -401,19 +401,19 @@ def build_one(name: str, image_cfg: dict[str, Any], global_cfg: dict[str, Any],
     if cached.exists():
         got = hash_file(cached, algo)
         if got != upstream_hash:
-            log("缓存 checksum 不匹配，重新下载")
+            log("Cached checksum does not match; downloading again")
             cached.unlink()
     if not cached.exists():
         download(image_url, cached, upstream_hash, algo)
     else:
-        log(f"使用已校验缓存: {cached}")
+        log(f"Using verified cache: {cached}")
 
     inactive, current = choose_inactive_slot(name, image_cfg, state)
     log(f"{name}: current={current}, build_slot={inactive}")
 
-    # 只销毁 inactive/previous slot；current 在新版本通过测试前绝不动。
+    # Destroy only the inactive/previous slot; never touch current before validation.
     if vm_exists(inactive):
-        log(f"{name}: 清理旧 previous slot {inactive}")
+        log(f"{name}: removing old previous slot {inactive}")
         destroy_vm(inactive)
 
     work = WORK_DIR / f"{name}-{inactive}.qcow2"
@@ -439,7 +439,7 @@ def build_one(name: str, image_cfg: dict[str, Any], global_cfg: dict[str, Any],
             int(global_cfg.get("shutdown_timeout_sec", 60)),
         )
 
-        # 测试通过后才切换 current 标识。
+        # Switch the current marker only after the test passes.
         if current is not None and vm_exists(current):
             set_vm_name(current, f"{base_name}-previous")
         set_vm_name(inactive, f"{base_name}-current")
@@ -457,8 +457,8 @@ def build_one(name: str, image_cfg: dict[str, Any], global_cfg: dict[str, Any],
         return True
 
     except Exception:
-        log(f"{name}: FAILED；保留原 current={current}")
-        # candidate 可以安全删除；旧 current 从未启动/修改。
+        log(f"{name}: FAILED; preserving original current={current}")
+        # The candidate is safe to delete; the old current was never booted or modified.
         if vm_exists(inactive):
             destroy_vm(inactive)
         raise
@@ -469,10 +469,10 @@ def build_one(name: str, image_cfg: dict[str, Any], global_cfg: dict[str, Any],
 def main() -> int:
     ap = argparse.ArgumentParser(description="Build/update Proxmox cloud-image templates")
     ap.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
-    ap.add_argument("--all", action="store_true", help="构建所有 enabled 镜像")
-    ap.add_argument("--only", nargs="+", help="只处理指定镜像，如 --only debian-13 ubuntu-26.04")
-    ap.add_argument("--force", action="store_true", help="即使 checksum 未变化也强制重建")
-    ap.add_argument("--check", action="store_true", help="只检查上游是否有更新，不下载/构建")
+    ap.add_argument("--all", action="store_true", help="Build all enabled images")
+    ap.add_argument("--only", nargs="+", help="Process selected images, for example --only debian-13 ubuntu-26.04")
+    ap.add_argument("--force", action="store_true", help="Rebuild even when the checksum is unchanged")
+    ap.add_argument("--check", action="store_true", help="Check for upstream updates without downloading or building")
     args = ap.parse_args()
 
     require_root()
@@ -488,17 +488,17 @@ def main() -> int:
     elif args.all or args.check:
         selected = [name for name, icfg in images.items() if icfg.get("enabled", True)]
     else:
-        ap.error("请使用 --all、--only ... 或 --check")
+        ap.error("Use --all, --only ..., or --check")
 
     unknown = [x for x in selected if x not in images]
     if unknown:
-        raise FactoryError("未知镜像: " + ", ".join(unknown))
+        raise FactoryError("Unknown images: " + ", ".join(unknown))
 
     with LOCK_FILE.open("w") as lock:
         try:
             fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            raise FactoryError("另一个 image-factory 任务正在运行")
+            raise FactoryError("Another image-factory task is already running")
 
         state = load_state()
         failures = []
@@ -520,15 +520,15 @@ def main() -> int:
                 log(f"ERROR {name}: {e}")
 
         if failures:
-            log("失败汇总:")
+            log("Failure summary:")
             for name, err in failures:
                 log(f"  {name}: {err}")
             return 2
 
         if args.check:
-            log(f"检查完成：{changed_count} 个镜像有更新")
+            log(f"Check complete: {changed_count} image(s) have updates")
         else:
-            log(f"完成：{changed_count} 个模板发生更新")
+            log(f"Complete: {changed_count} template(s) updated")
         return 0
 
 

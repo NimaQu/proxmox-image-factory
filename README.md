@@ -108,6 +108,13 @@ All templates and cloned VMs use the host CPU model. This provides the physical
 CPU's available instruction set and performance features, but migration targets
 must have compatible CPUs.
 
+After upgrading an existing installation, set `global.cpu: host` in the installed
+configuration and run `pve-image-build --all`. Even when an image's checksum is
+unchanged, the builder updates the CPU setting on its existing current and previous
+templates without rebuilding their disks. `--check` remains read-only. `newvm`
+also explicitly applies the configured CPU model when cloning older templates.
+VMs that were already cloned are not changed.
+
 Also ensure these VMIDs are unused:
 
 ```text

@@ -254,7 +254,11 @@ def main() -> int:
         ])
         created = True
 
-        run(["qm", "set", str(vmid), "--cores", str(cores), "--memory", str(memory)])
+        run([
+            "qm", "set", str(vmid),
+            "--cores", str(cores), "--memory", str(memory),
+            "--cpu", str(g.get("cpu", "host")),
+        ])
         # Rewrite net0 to generate a new random MAC and allow a different bridge.
         run(["qm", "set", str(vmid), "--net0", f"virtio,bridge={bridge}"])
 

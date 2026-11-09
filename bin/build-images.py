@@ -196,6 +196,14 @@ def qm_config(vmid: int) -> str:
     return run(["qm", "config", str(vmid)], capture=True).stdout or ""
 
 
+def sync_template_cpu(vmid: int, cpu: str) -> None:
+    cfg = qm_config(vmid)
+    match = re.search(r"^cpu:\s*(.+)$", cfg, re.MULTILINE)
+    if match and match.group(1).strip() == cpu:
+        return
+    run(["qm", "set", str(vmid), "--cpu", cpu])
+
+
 def destroy_vm(vmid: int) -> None:
     if not vm_exists(vmid):
         return
@@ -400,7 +408,12 @@ def build_one(name: str, image_cfg: dict[str, Any], global_cfg: dict[str, Any],
         return changed
 
     if not force and not changed:
-        log(f"{name}: upstream checksum is unchanged; skipping")
+        cpu = str(global_cfg.get("cpu", "host"))
+        sync_template_cpu(int(current_vmid), cpu)
+        previous_vmid = old.get("previous_vmid")
+        if previous_vmid and vm_exists(int(previous_vmid)):
+            sync_template_cpu(int(previous_vmid), cpu)
+        log(f"{name}: template CPU settings synchronized; upstream checksum is unchanged; skipping rebuild")
         return False
 
     cache_name = f"{name}-{upstream_hash[:16]}-{filename}"
